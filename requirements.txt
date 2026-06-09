@@ -1,0 +1,9 @@
+torch>=2.8.0
+torchaudio>=2.8.0
+torchvision>=0.24.1
+transformers==4.57.3
+opencv-python
+rich
+accelerate
+safetensors
+# mamba-ssm (optional)

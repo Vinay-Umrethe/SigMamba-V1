@@ -1,0 +1,39 @@
+# Environment.
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Data.
+data/
+datasets/
+cache/
+components/
+*.jsonl
+*.parquet
+
+# Checkpoints.
+models/
+features/
+checkpoints-*/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Logs.
+logs/
+runs/
+results/
+*.log
+
+# Others.
+.env
+.secrets
+.DS_Store
+.vscode/
+.ruff_cache/
+.idea/
+.ipynb_checkpoints
