@@ -107,6 +107,7 @@ pip install opencv-python
 pip install transformers==4.57.3
 ```
 
+> [!TIP]
 > It's recommended to use `num_frames=32` due to model's training.
 
 ### Loading the Model
