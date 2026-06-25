@@ -94,19 +94,16 @@ graph LR
 | Mamba d_model | 768 | Internal hidden dimension |
 | Mamba Depth | 8 | Number of stacked layers |
 
-> **SigMamba:** The Mamba model is ~32M parameters.
+**SigMamba:** The Mamba model is ~32M parameters.
 
 ---
 
 ## Usage
-
 #### Prerequisites
-
 ```bash
 pip install opencv-python
 pip install transformers==4.57.3
 ```
-
 > [!TIP]
 > It's recommended to use `num_frames=32` due to model's training.
 
@@ -115,39 +112,27 @@ pip install transformers==4.57.3
 ```python
 from transformers import AutoModel, AutoProcessor
 import torch
-
-# Load the unified exported model
 model = AutoModel.from_pretrained(
-    "VINAY-UMRETHE/SigMamba-V1-Large", # OR "VINAY-UMRETHE/SigMamba-V1-Small"
+    "VINAY-UMRETHE/SigMamba-V1-Large",
     trust_remote_code=True
 )
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 model.eval()
-
-# Load vision processor for pixel preprocessing
 processor = AutoProcessor.from_pretrained(model.config.vision_model_id)
 ```
 
 ---
 
-## Inference Mode 1: Unified (Raw Pixels $\rightarrow$ Scores)
+## Inference Mode 1: Unified (Raw Pixels → Scores)
 
-Use this when you have raw video frames. The model handles feature extraction internally.
-
-### Input Shape
-```
-pixel_values: (Batch, Time, Channels, Height, Width)
-              (B, T, 3, 384, 384)
-```
+Use this when you have raw video files. The model handles feature extraction internally.
 
 ### Example: Single Video
 
 ```python
 import cv2
 import numpy as np
-
 def load_video_frames(video_path, num_frames=32):
     """Sample frames uniformly from a video."""
     cap = cv2.VideoCapture(video_path)
@@ -163,37 +148,22 @@ def load_video_frames(video_path, num_frames=32):
             frames.append(frame)
     cap.release()
     return frames
-
-# Load and preprocess
 frames = load_video_frames("test_video.mp4", num_frames=32)
 inputs = processor(images=frames, return_tensors="pt")
-pixel_values = inputs.pixel_values.to(device)  # (32, 3, 384, 384)
-
-# Add batch dimension: (1, 32, 3, 384, 384)
+pixel_values = inputs.pixel_values.to(device)
 pixel_values = pixel_values.unsqueeze(0)
-
-# Inference
+# Inference.
 with torch.no_grad():
     scores = model(pixel_values=pixel_values)
-    # scores shape: (1, 32, 1)
-
-# Get results
-anomaly_scores = scores.squeeze().cpu().numpy()  # (32,)
+# Get results.
+anomaly_scores = scores.squeeze().cpu().numpy()
 max_score = anomaly_scores.max()
 print(f"Max Anomaly Score: {max_score:.4f}")
 ```
 
----
+## Inference Mode 2: Modular (Pre-Extracted Features → Scores)
 
-## Inference Mode 2: Modular (Pre-Extracted Features $\rightarrow$ Scores)
-
-Use this when you've already extracted features (e.g., from batch processing).
-
-### Input Shape
-```
-features: (Batch, Time, FeatureDim)
-          (B, T, 1024)
-```
+Use this when you've already extracted features for Training the model.
 
 ### Example: From Feature File
 
@@ -207,100 +177,75 @@ def load_features_from_txt(feature_path):
         values = [float(v) for v in line.strip().split()]
         features.append(values)
     return torch.tensor(features, dtype=torch.float32)
-
-# Load features
-features = load_features_from_txt("video_features.txt")  # (T, 1024)
-features = features.unsqueeze(0).to(device)  # (1, T, 1024)
-
-# Inference
+# Load features.
+features = load_features_from_txt("video_features.txt")
+features = features.unsqueeze(0).to(device)
+# Inference.
 with torch.no_grad():
     scores = model(features=features)
-    # scores shape: (1, T, 1)
-
 print(f"Anomaly Scores: {scores.squeeze().cpu().numpy()}")
 ```
-
----
 
 ## Batch Processing Multiple Videos
 
 Process multiple videos in a single forward pass for efficiency.
 
 ```python
-# Load multiple videos
+# Load multiple videos.
 video_paths = ["video1.mp4", "video2.mp4", "video3.mp4"]
 batch_frames = []
-
 for path in video_paths:
     frames = load_video_frames(path, num_frames=32)
     inputs = processor(images=frames, return_tensors="pt")
     batch_frames.append(inputs.pixel_values)
-
-# Stack into batch: (3, 32, 3, 384, 384)
 pixel_values = torch.stack(batch_frames).to(device)
-
-# Single forward pass for all videos
 with torch.no_grad():
     scores = model(pixel_values=pixel_values)
-    # scores shape: (3, 32, 1)
-
-# Per-video max scores
 for i, path in enumerate(video_paths):
     max_score = scores[i].max().item()
     print(f"{path}: {max_score:.4f}")
 ```
 
----
+## Single Frame
 
-## Single Frame Analysis
-
-For quick spot-checks on individual frames.
+For individual frames.
 
 ```python
 from PIL import Image
-
-# Load single image
+# Load single image.
 image = Image.open("suspicious_frame.jpg")
 inputs = processor(images=image, return_tensors="pt")
-pixel_values = inputs.pixel_values.to(device)  # (1, 3, 384, 384)
-
-# Reshape: (1, 1, 3, 384, 384) - batch=1, time=1
+pixel_values = inputs.pixel_values.to(device)
 pixel_values = pixel_values.unsqueeze(0)
-
 with torch.no_grad():
     score = model(pixel_values=pixel_values)
     print(f"Frame Anomaly Score: {score.item():.4f}")
 ```
-
----
 
 ## Extract Features Only (No Classification)
 
 Access the Mamba encoder output directly for custom downstream tasks.
 
 ```python
-# Load frames
+# Load frames.
 frames = load_video_frames("video.mp4", num_frames=32)
 inputs = processor(images=frames, return_tensors="pt")
 pixel_values = inputs.pixel_values.unsqueeze(0).to(device)
-
-# Access internal components
+# Access internal components.
 with torch.no_grad():
-    # Step 1: Extract vision features
+    # Step 1: Extract vision features.
     b, t, c, h, w = pixel_values.shape
     flat_pixels = pixel_values.view(b * t, c, h, w)
     vision_features = model.vision_model.get_image_features(pixel_values=flat_pixels)
     vision_features = vision_features / vision_features.norm(dim=-1, keepdim=True)
-    vision_features = vision_features.view(b, t, -1)  # (1, 32, 1024)
+    vision_features = vision_features.view(b, t, -1)
     
-    # Step 2: Get Mamba-encoded features
-    mamba_features = model.mamba_encoder(vision_features)  # (1, 32, 512)
+    # Step 2: Get Mamba-encoded features.
+    mamba_features = model.mamba_encoder(vision_features)
     
     print(f"Vision Features: {vision_features.shape}")
     print(f"Mamba Features: {mamba_features.shape}")
 ```
-
----
 
 ## Threshold-Based Detection 
 
@@ -325,12 +270,31 @@ def detect_anomalies(video_path, threshold=0.5):
         "is_anomalous": scores.max() > threshold,
         "anomalous_segments": anomalous_segments.tolist()
     }
-
-# Usage
+# Inference.
 result = detect_anomalies("test.mp4", threshold=0.5)
 print(f"Anomalous: {result['is_anomalous']}")
 print(f"Segments: {result['anomalous_segments']}")
 ```
+
+## Output Reference
+
+| Method | Input Shape | Output Shape | Description |
+|:---|:---|:---|:---|
+| `model(pixel_values=...)` | `(B, T, C, H, W)` | `(B, T, O)` | End-to-end raw frame inference |
+| `model(features=...)` | `(B, T, D)` | `(B, T, O)` | Use pre-extracted features for training |
+| `model.mamba_encoder(...)` | `(B, T, D)` | `(B, T, M)` | Process features through Mamba |
+| `model.vision_encoder(...)` | `(N, C, H, W)` | `(N, D)` | Extract SigLIP features from frames |
+
+Where:
+
+* **B**: Batch size
+* **T**: Video sequence length (Total frames)
+* **N**: Total flattened frames (B x T)
+* **C**: Image channels (3)
+* **H, W**: Frame height and width (384)
+* **O**: Output anomaly dimension (1)
+* **M**: Mamba internal hidden dimension (768)
+* **D**: Vision feature embedding dimension (1024 for Large, 768 for Small)
 
 ---
 
@@ -347,18 +311,6 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 All model weights, generated outputs, and modeling code (located in the `sigmamba_release/` directory) are licensed under the **MIT License**.
-
----
-
-### Output Reference
-
-| Method | Input | Output Shape | Description |
-|--------|-------|--------------|-------------|
-| `model(pixel_values=...)` | `(B, T, 3, 384, 384)` | `(B, T, 1)` | End-to-end inference |
-| `model(features=...)` | `(B, T, 1024)` | `(B, T, 1)` | Feature-based inference |
-| `model.mamba_encoder(...)` | `(B, T, 1024)` | `(B, T, 512)` | Encoded temporal features |
-| `model.vision_model.get_image_features(...)` | `(N, 3, 384, 384)` | `(N, 1024)` | Raw vision embeddings |
-
 
 ---
 
